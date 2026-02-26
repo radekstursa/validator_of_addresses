@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from validator import AddressValidator
 
 app = FastAPI()
+
+# Lazy loading validatoru kvůli nízké RAM na Render Free
 validator = None
 
 def get_validator():
@@ -11,21 +13,14 @@ def get_validator():
         validator = AddressValidator()
     return validator
 
-
 class AddressInput(BaseModel):
     city: str
-    psc: str = ""
-    street: str = ""
-    cp: str = ""
-    co: str = ""
+    psc: str
+    street: str
+    cp: str
 
 @app.post("/validate")
-def validate_address(addr: AddressInput):
-    result = validator.validate(
-        addr.city,
-        addr.psc,
-        addr.street,
-        addr.cp,
-        addr.co
-    )
-    return result
+def validate_address(data: AddressInput):
+    v = get_validator()
+    return v.validate(data.city, data.psc, data.street, data.cp)
+
