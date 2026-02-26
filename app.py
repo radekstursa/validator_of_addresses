@@ -8,7 +8,7 @@ validator = AddressValidator()
 
 class Address(BaseModel):
     city: str
-    psc: str
+    psc: Union[str, int]   # ← přijme string i číslo
     street: str
     cp: Union[str, int]   # ← přijme string i číslo
 
