@@ -17,7 +17,7 @@ class AddressInput(BaseModel):
     city: str
     psc: str
     street: str
-    cp: str
+    cp: int
 
 @app.post("/validate")
 def validate_address(data: AddressInput):
