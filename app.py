@@ -5,10 +5,11 @@ from validator import AddressValidator
 app = FastAPI()
 validator = None
 
-@app.on_event("startup")
-def load_validator():
+def get_validator():
     global validator
-    validator = AddressValidator()
+    if validator is None:
+        validator = AddressValidator()
+    return validator
 
 
 class AddressInput(BaseModel):
