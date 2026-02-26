@@ -4,7 +4,8 @@ from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from collections import defaultdict
 
-CSV_URL = "https://github.com/radekstursa/validator_of_addresses/addresses_praha.csv"
+CSV_URL = "https://raw.githubusercontent.com/radekstursa/validator_of_addresses/main/addresses_praha.csv"
+
 
 class AddressValidator:
     def __init__(self):
