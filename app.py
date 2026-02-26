@@ -6,11 +6,11 @@ from validator import AddressValidator
 app = FastAPI()
 validator = AddressValidator()
 
-class Address(BaseModel):
+    class Address(BaseModel):
     city: str
-    psc: Union[str, int]   # ← přijme string i číslo
+    psc: str
     street: str
-    cp: Union[str, int]   # ← přijme string i číslo
+    cp: str
 
 @app.post("/validate")
 def validate_address(addr: Address):
