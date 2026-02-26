@@ -11,7 +11,7 @@ class AddressValidator:
         response = requests.get(CSV_URL, stream=True)
         response.raise_for_status()
 
-        lines = (line.decode("utf-8") for line in response.iter_lines())
+        lines = (line.decode("utf-8-sig") for line in response.iter_lines())
         reader = csv.DictReader(lines)
 
         self.cities = set()
@@ -22,7 +22,7 @@ class AddressValidator:
         for row in reader:
             city = row["city"].strip()
             street = row["street"].strip()
-            psc = row["psc"].replace(" ", "")
+            psc = row["psc"].replace(" ", "").strip()
             cp = row["cp"].strip()
 
             city_norm = self._normalize(city)
@@ -41,9 +41,9 @@ class AddressValidator:
     def validate(self, city, psc, street, cp):
         city_norm = self._normalize(city)
         street_norm = self._normalize(street)
-        psc_norm = str(psc).replace(" ", "")
+        psc_norm = str(psc).replace(" ", "").strip()
 
-        # 🔥 cp může být číslo, string nebo "214/4"
+        # cp může být číslo, string nebo "214/4"
         cp_clean = str(cp).split("/")[0].strip()
 
         # fuzzy match města
@@ -53,13 +53,13 @@ class AddressValidator:
         if score_city < 80:
             return {"valid": False, "reason": "City not found"}
 
-        # bezpečná kontrola existence
-        if best_city not in self.streets_by_city:
-            return {"valid": False, "reason": "City not in dataset"}
-
         # fuzzy match ulice
+        streets = self.streets_by_city.get(best_city, set())
+        if not streets:
+            return {"valid": False, "reason": "City has no streets in dataset"}
+
         best_street, score_street = process.extractOne(
-            street_norm, list(self.streets_by_city[best_city]), scorer=fuzz.WRatio
+            street_norm, list(streets), scorer=fuzz.WRatio
         )
         if score_street < 80:
             return {"valid": False, "reason": "Street not found in city"}
@@ -69,7 +69,8 @@ class AddressValidator:
             return {"valid": False, "reason": "Postal code does not match city"}
 
         # kontrola čísla popisného
-        if cp_clean not in self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set()):
+        cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
+        if cp_clean not in cps:
             return {"valid": False, "reason": "House number not found"}
 
         return {
@@ -79,3 +80,4 @@ class AddressValidator:
             "street": street,
             "cp": cp
         }
+
