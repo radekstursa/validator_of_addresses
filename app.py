@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from validator import AddressValidator
 
 app = FastAPI()
-validator = AddressValidator("data/addresses.csv")
+validator = AddressValidator()
 
 class AddressInput(BaseModel):
     city: str
