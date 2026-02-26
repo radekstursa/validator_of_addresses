@@ -11,6 +11,7 @@ class AddressValidator:
         response = requests.get(CSV_URL, stream=True)
         response.raise_for_status()
 
+        # UTF-8 with BOM safe decode
         lines = (line.decode("utf-8-sig") for line in response.iter_lines())
         reader = csv.DictReader(lines)
 
@@ -68,7 +69,7 @@ class AddressValidator:
         if psc_norm not in self.psc_by_city.get(best_city, set()):
             return {"valid": False, "reason": "Postal code does not match city"}
 
-        # kontrola čísla popisného
+        # bezpečný přístup – už nikdy KeyError → žádné 500
         cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
         if cp_clean not in cps:
             return {"valid": False, "reason": "House number not found"}
@@ -80,4 +81,5 @@ class AddressValidator:
             "street": street,
             "cp": cp
         }
+
 
