@@ -6,22 +6,18 @@ from collections import defaultdict
 
 CSV_URL = "https://raw.githubusercontent.com/radekstursa/validator_of_addresses/main/addresses_praha.csv"
 
-
 class AddressValidator:
     def __init__(self):
-        print("Downloading Prague CSV...")
         response = requests.get(CSV_URL, stream=True)
         response.raise_for_status()
 
-        print("CSV downloaded, streaming parse...")
+        lines = (line.decode("utf-8") for line in response.iter_lines())
+        reader = csv.DictReader(lines)
 
         self.cities = set()
         self.streets_by_city = defaultdict(set)
         self.psc_by_city = defaultdict(set)
         self.rows = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
-
-        lines = (line.decode("utf-8") for line in response.iter_lines())
-        reader = csv.DictReader(lines)
 
         for row in reader:
             city = row["city"].strip()
@@ -29,21 +25,15 @@ class AddressValidator:
             psc = row["psc"].replace(" ", "")
             cp = row["cp"].strip()
 
-            # Praha má PSČ 10000–19999
-            if not (psc.isdigit() and len(psc) == 5 and psc.startswith("1")):
-                continue
-
             city_norm = self._normalize(city)
             street_norm = self._normalize(street)
 
             self.cities.add(city_norm)
             self.streets_by_city[city_norm].add(street_norm)
             self.psc_by_city[city_norm].add(psc)
-
             self.rows[city_norm][street_norm][psc].add(cp)
 
         self.cities = list(self.cities)
-        print("Prague dataset loaded.")
 
     def _normalize(self, text):
         return unidecode(str(text).strip().lower())
@@ -53,7 +43,7 @@ class AddressValidator:
         street_norm = self._normalize(street)
         psc_norm = str(psc).replace(" ", "")
 
-        # číslo popisné může být "214/4" → vezmeme jen "214"
+        # 🔥 cp může být číslo, string nebo "214/4"
         cp_clean = str(cp).split("/")[0].strip()
 
         # fuzzy match města
@@ -61,7 +51,11 @@ class AddressValidator:
             city_norm, self.cities, scorer=fuzz.WRatio
         )
         if score_city < 80:
-            return {"valid": False, "reason": "City not found in Prague"}
+            return {"valid": False, "reason": "City not found"}
+
+        # bezpečná kontrola existence
+        if best_city not in self.streets_by_city:
+            return {"valid": False, "reason": "City not in dataset"}
 
         # fuzzy match ulice
         best_street, score_street = process.extractOne(
@@ -71,17 +65,17 @@ class AddressValidator:
             return {"valid": False, "reason": "Street not found in city"}
 
         # kontrola PSČ
-        if psc_norm not in self.psc_by_city[best_city]:
+        if psc_norm not in self.psc_by_city.get(best_city, set()):
             return {"valid": False, "reason": "Postal code does not match city"}
 
         # kontrola čísla popisného
-        if cp_clean not in self.rows[best_city][best_street][psc_norm]:
+        if cp_clean not in self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set()):
             return {"valid": False, "reason": "House number not found"}
 
         return {
             "valid": True,
             "city": city,
-            "street": street,
             "psc": psc,
-            "cp": cp,  # vracíme původní formát, i s lomítkem
+            "street": street,
+            "cp": cp
         }
