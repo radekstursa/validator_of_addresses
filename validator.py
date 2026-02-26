@@ -1,44 +1,63 @@
-import pandas as pd
+import csv
+import requests
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from collections import defaultdict
-import requests
 from io import StringIO
 
-
-# URL k tvému CSV souboru z GitHub Releases (nahraď vlastní)
 CSV_URL = "https://github.com/radekstursa/validator_of_addresses/releases/download/v1/addresses.csv"
 
 
 class AddressValidator:
     def __init__(self):
-        # stáhne CSV z GitHubu
-        response = requests.get(CSV_URL)
+        print("Downloading CSV...")
+        response = requests.get(CSV_URL, stream=True)
         response.raise_for_status()
 
-        csv_text = response.text
-        df = pd.read_csv(StringIO(csv_text), dtype=str).fillna("")
+        print("CSV downloaded, streaming parse...")
 
-        # normalizace textu
-        df["city_norm"] = df["city"].apply(self._normalize)
-        df["street_norm"] = df["street"].apply(self._normalize)
-        df["psc_norm"] = df["psc"].astype(str).str.replace(" ", "")
+        # příprava struktur
+        self.cities = set()
+        self.streets_by_city = defaultdict(set)
+        self.psc_by_city = defaultdict(set)
+        self.rows = []  # uložíme jen malé dicty, ne celý dataframe
 
-        # indexy pro rychlé vyhledávání
-        self.cities = df["city_norm"].unique().tolist()
-        self.streets_by_city = defaultdict(list)
-        self.psc_by_city = defaultdict(list)
+        # streamované čtení CSV
+        lines = (line.decode("utf-8") for line in response.iter_lines())
+        reader = csv.DictReader(lines)
 
-        for _, row in df.iterrows():
-            self.streets_by_city[row["city_norm"]].append(row["street_norm"])
-            self.psc_by_city[row["city_norm"]].append(row["psc_norm"])
+        for row in reader:
+            city = row["city"].strip()
+            street = row["street"].strip()
+            psc = row["psc"].replace(" ", "")
+            cp = row["cp"].strip()
 
-        self.df = df
+            city_norm = self._normalize(city)
+            street_norm = self._normalize(street)
+
+            self.cities.add(city_norm)
+            self.streets_by_city[city_norm].add(street_norm)
+            self.psc_by_city[city_norm].add(psc)
+
+            # uložíme jen to, co potřebujeme pro finální match
+            self.rows.append({
+                "city_norm": city_norm,
+                "street_norm": street_norm,
+                "psc": psc,
+                "cp": cp,
+                "city": city,
+                "street": street
+            })
+
+        self.cities = list(self.cities)
+        print("CSV loaded and indexed.")
 
     def _normalize(self, text):
         return unidecode(str(text).strip().lower())
 
     def validate(self, city, psc, street, cp):
+        print("Validating address...")
+
         city_norm = self._normalize(city)
         street_norm = self._normalize(street)
         psc_norm = str(psc).replace(" ", "")
@@ -53,7 +72,7 @@ class AddressValidator:
 
         # fuzzy match ulice
         best_street, score_street = process.extractOne(
-            street_norm, self.streets_by_city[best_city], scorer=fuzz.WRatio
+            street_norm, list(self.streets_by_city[best_city]), scorer=fuzz.WRatio
         )
 
         if score_street < 80:
@@ -64,19 +83,19 @@ class AddressValidator:
             return {"valid": False, "reason": "Postal code does not match city"}
 
         # kontrola čísla popisného
-        row = self.df[
-            (self.df["city_norm"] == best_city)
-            & (self.df["street_norm"] == best_street)
-            & (self.df["cp"].astype(str) == str(cp))
-        ]
+        for row in self.rows:
+            if (
+                row["city_norm"] == best_city
+                and row["street_norm"] == best_street
+                and row["psc"] == psc_norm
+                and row["cp"] == str(cp)
+            ):
+                return {
+                    "valid": True,
+                    "city": row["city"],
+                    "street": row["street"],
+                    "psc": row["psc"],
+                    "cp": row["cp"],
+                }
 
-        if row.empty:
-            return {"valid": False, "reason": "House number not found"}
-
-        return {
-            "valid": True,
-            "city": row.iloc[0]["city"],
-            "street": row.iloc[0]["street"],
-            "psc": row.iloc[0]["psc"],
-            "cp": row.iloc[0]["cp"],
-        }
+        return {"valid": False, "reason": "House number not found"}
