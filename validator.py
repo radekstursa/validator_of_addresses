@@ -48,7 +48,7 @@ class AddressValidator:
         cp_clean = str(cp).split("/")[0].strip()
 
         # fuzzy match města
-        best_city, score_city = process.extractOne(
+        best_city, score_city, _ = process.extractOne(
             city_norm, self.cities, scorer=fuzz.WRatio
         )
         if score_city < 80:
@@ -59,7 +59,7 @@ class AddressValidator:
         if not streets:
             return {"valid": False, "reason": "City has no streets in dataset"}
 
-        best_street, score_street = process.extractOne(
+        best_city, score_city, _ = process.extractOne(
             street_norm, list(streets), scorer=fuzz.WRatio
         )
         if score_street < 80:
