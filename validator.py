@@ -6,9 +6,6 @@ from collections import defaultdict
 
 CSV_URL = "https://raw.githubusercontent.com/radekstursa/validator_of_addresses/main/addresses_praha.csv"
 
-
-
-
 class AddressValidator:
     def __init__(self):
         response = requests.get(CSV_URL, stream=True)
