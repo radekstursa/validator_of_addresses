@@ -1,7 +1,6 @@
 import csv
 import requests
 from unidecode import unidecode
-from rapidfuzz import process, fuzz
 from collections import defaultdict
 
 CSV_URL = "https://raw.githubusercontent.com/radekstursa/validator_of_addresses/main/addresses_praha.csv"
@@ -14,65 +13,33 @@ class AddressValidator:
         lines = (line.decode("utf-8-sig") for line in response.iter_lines())
         reader = csv.DictReader(lines)
 
-        self.cities = set()
-        self.streets_by_city = defaultdict(set)
-        self.psc_by_city = defaultdict(set)
-        # rows[city][street][psc] = set of (cp, co) tuples
-        self.rows = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
+        # key: (city_norm, psc, street_norm) -> set of (cp, co) tuples
+        self.addresses = defaultdict(set)
 
         for row in reader:
-            city = row["city"].strip()
-            street = row["street"].strip()
+            city_norm = self._normalize(row["city"])
             psc = row["psc"].replace(" ", "").strip()
+            street_norm = self._normalize(row["street"])
             cp = row["cp"].strip()
-            co = row.get("co", "").strip()
-
-            city_norm = self._normalize(city)
-            street_norm = self._normalize(street)
-
-            self.cities.add(city_norm)
-            self.streets_by_city[city_norm].add(street_norm)
-            self.psc_by_city[city_norm].add(psc)
-            self.rows[city_norm][street_norm][psc].add((cp, co))
-
-        self.cities = list(self.cities)
+            co = row["co"].strip()
+            self.addresses[(city_norm, psc, street_norm)].add((cp, co))
 
     def _normalize(self, text):
         return unidecode(str(text).strip().lower())
 
     def validate(self, city, psc, street, cp, co=None):
         city_norm = self._normalize(city)
-        street_norm = self._normalize(street)
         psc_norm = str(psc).replace(" ", "").strip()
+        street_norm = self._normalize(street)
         cp_clean = str(cp).strip()
         co_clean = str(co).strip() if co else None
 
-        # Fuzzy match city
-        best_city, score_city, _ = process.extractOne(
-            city_norm, self.cities, scorer=fuzz.WRatio
-        )
-        if score_city < 80:
-            return {"valid": False, "reason": "City not found"}
+        key = (city_norm, psc_norm, street_norm)
+        entries = self.addresses.get(key)
 
-        # Fuzzy match street
-        streets = self.streets_by_city.get(best_city, set())
-        if not streets:
-            return {"valid": False, "reason": "City has no streets in dataset"}
+        if not entries:
+            return {"valid": False, "reason": "Address not found"}
 
-        best_street, score_street, _ = process.extractOne(
-            street_norm, list(streets), scorer=fuzz.WRatio
-        )
-        if score_street < 80:
-            return {"valid": False, "reason": "Street not found in city"}
-
-        # Check postal code
-        if psc_norm not in self.psc_by_city.get(best_city, set()):
-            return {"valid": False, "reason": "Postal code does not match city"}
-
-        # Check house number
-        entries = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
-
-        # cp is required; co is optional — if provided, must also match
         if co_clean:
             match = any(cp_clean == e[0] and co_clean == e[1] for e in entries)
         else:
