@@ -40,46 +40,34 @@ class AddressValidator:
         return unidecode(str(text).strip().lower())
 
     def validate(self, city, psc, street, cp):
-        city_norm = self._normalize(city)
-        street_norm = self._normalize(street)
-        psc_norm = str(psc).replace(" ", "").strip()
+    city_norm = self._normalize(city)
+    street_norm = self._normalize(street)
+    psc_norm = str(psc).replace(" ", "").strip()
+    cp_clean = str(cp).split("/")[0].strip()
 
-        # cp může být číslo, string nebo "214/4"
-        cp_clean = str(cp).split("/")[0].strip()
+    best_city, score_city, _ = process.extractOne(
+        city_norm, self.cities, scorer=fuzz.WRatio
+    )
+    if score_city < 80:
+        return {"valid": False, "reason": "City not found"}
 
-        # fuzzy match města
-        best_city, score_city, _ = process.extractOne(
-            city_norm, self.cities, scorer=fuzz.WRatio
-        )
-        if score_city < 80:
-            return {"valid": False, "reason": "City not found"}
+    streets = self.streets_by_city.get(best_city, set())
+    if not streets:
+        return {"valid": False, "reason": "City has no streets in dataset"}
 
-        # fuzzy match ulice
-        streets = self.streets_by_city.get(best_city, set())
-        if not streets:
-            return {"valid": False, "reason": "City has no streets in dataset"}
+    best_street, score_street, _ = process.extractOne(
+        street_norm, list(streets), scorer=fuzz.WRatio
+    )
+    if score_street < 80:
+        return {"valid": False, "reason": "Street not found in city"}
 
-        best_city, score_city, _ = process.extractOne(
-            street_norm, list(streets), scorer=fuzz.WRatio
-        )
-        if score_street < 80:
-            return {"valid": False, "reason": "Street not found in city"}
+    if psc_norm not in self.psc_by_city.get(best_city, set()):
+        return {"valid": False, "reason": "Postal code does not match city"}
 
-        # kontrola PSČ
-        if psc_norm not in self.psc_by_city.get(best_city, set()):
-            return {"valid": False, "reason": "Postal code does not match city"}
+    cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
+    if cp_clean not in cps:
+        return {"valid": False, "reason": "House number not found"}
 
-        # bezpečný přístup – už nikdy KeyError → žádné 500
-        cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
-        if cp_clean not in cps:
-            return {"valid": False, "reason": "House number not found"}
-
-        return {
-            "valid": True,
-            "city": city,
-            "psc": psc,
-            "street": street,
-            "cp": cp
-        }
+    return {"valid": True, "city": city, "psc": psc, "street": street, "cp": cp}
 
 
