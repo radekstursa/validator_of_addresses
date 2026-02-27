@@ -6,12 +6,11 @@ from collections import defaultdict
 
 CSV_URL = "https://raw.githubusercontent.com/radekstursa/validator_of_addresses/main/addresses_praha.csv"
 
+
 class AddressValidator:
     def __init__(self):
         response = requests.get(CSV_URL, stream=True)
         response.raise_for_status()
-
-        # UTF-8 with BOM safe decode
         lines = (line.decode("utf-8-sig") for line in response.iter_lines())
         reader = csv.DictReader(lines)
 
@@ -40,34 +39,44 @@ class AddressValidator:
         return unidecode(str(text).strip().lower())
 
     def validate(self, city, psc, street, cp):
-    city_norm = self._normalize(city)
-    street_norm = self._normalize(street)
-    psc_norm = str(psc).replace(" ", "").strip()
-    cp_clean = str(cp).split("/")[0].strip()
+        city_norm = self._normalize(city)
+        street_norm = self._normalize(street)
+        psc_norm = str(psc).replace(" ", "").strip()
+        cp_clean = str(cp).split("/")[0].strip()
 
-    best_city, score_city, _ = process.extractOne(
-        city_norm, self.cities, scorer=fuzz.WRatio
-    )
-    if score_city < 80:
-        return {"valid": False, "reason": "City not found"}
+        # Fuzzy match city
+        best_city, score_city, _ = process.extractOne(
+            city_norm, self.cities, scorer=fuzz.WRatio
+        )
+        if score_city < 80:
+            return {"valid": False, "reason": "City not found"}
 
-    streets = self.streets_by_city.get(best_city, set())
-    if not streets:
-        return {"valid": False, "reason": "City has no streets in dataset"}
+        # Fuzzy match street
+        streets = self.streets_by_city.get(best_city, set())
+        if not streets:
+            return {"valid": False, "reason": "City has no streets in dataset"}
 
-    best_street, score_street, _ = process.extractOne(
-        street_norm, list(streets), scorer=fuzz.WRatio
-    )
-    if score_street < 80:
-        return {"valid": False, "reason": "Street not found in city"}
+        best_street, score_street, _ = process.extractOne(
+            street_norm, list(streets), scorer=fuzz.WRatio
+        )
+        if score_street < 80:
+            return {"valid": False, "reason": "Street not found in city"}
 
-    if psc_norm not in self.psc_by_city.get(best_city, set()):
-        return {"valid": False, "reason": "Postal code does not match city"}
+        # Check postal code
+        if psc_norm not in self.psc_by_city.get(best_city, set()):
+            return {"valid": False, "reason": "Postal code does not match city"}
 
-    cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
-    if cp_clean not in cps:
-        return {"valid": False, "reason": "House number not found"}
+        # Check house number
+        cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
+        if cp_clean not in cps:
+            return {"valid": False, "reason": "House number not found"}
 
-    return {"valid": True, "city": city, "psc": psc, "street": street, "cp": cp}
+        return {
+            "valid": True,
+            "city": city,
+            "psc": psc,
+            "street": street,
+            "cp": cp
+        }
 
 
