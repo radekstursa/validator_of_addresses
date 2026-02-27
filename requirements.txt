@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 pandas
-rapidfuzz
 unidecode
 requests
