@@ -17,6 +17,7 @@ class AddressValidator:
         self.cities = set()
         self.streets_by_city = defaultdict(set)
         self.psc_by_city = defaultdict(set)
+        # rows[city][street][psc] = set of (cp, co) tuples
         self.rows = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
 
         for row in reader:
@@ -24,6 +25,7 @@ class AddressValidator:
             street = row["street"].strip()
             psc = row["psc"].replace(" ", "").strip()
             cp = row["cp"].strip()
+            co = row.get("co", "").strip()
 
             city_norm = self._normalize(city)
             street_norm = self._normalize(street)
@@ -31,18 +33,19 @@ class AddressValidator:
             self.cities.add(city_norm)
             self.streets_by_city[city_norm].add(street_norm)
             self.psc_by_city[city_norm].add(psc)
-            self.rows[city_norm][street_norm][psc].add(cp)
+            self.rows[city_norm][street_norm][psc].add((cp, co))
 
         self.cities = list(self.cities)
 
     def _normalize(self, text):
         return unidecode(str(text).strip().lower())
 
-    def validate(self, city, psc, street, cp):
+    def validate(self, city, psc, street, cp, co=None):
         city_norm = self._normalize(city)
         street_norm = self._normalize(street)
         psc_norm = str(psc).replace(" ", "").strip()
-        cp_clean = str(cp).split("/")[0].strip()
+        cp_clean = str(cp).strip()
+        co_clean = str(co).strip() if co else None
 
         # Fuzzy match city
         best_city, score_city, _ = process.extractOne(
@@ -67,8 +70,15 @@ class AddressValidator:
             return {"valid": False, "reason": "Postal code does not match city"}
 
         # Check house number
-        cps = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
-        if cp_clean not in cps:
+        entries = self.rows.get(best_city, {}).get(best_street, {}).get(psc_norm, set())
+
+        # cp is required; co is optional — if provided, must also match
+        if co_clean:
+            match = any(cp_clean == e[0] and co_clean == e[1] for e in entries)
+        else:
+            match = any(cp_clean == e[0] for e in entries)
+
+        if not match:
             return {"valid": False, "reason": "House number not found"}
 
         return {
@@ -76,7 +86,7 @@ class AddressValidator:
             "city": city,
             "psc": psc,
             "street": street,
-            "cp": cp
+            "cp": cp,
+            "co": co
         }
-
 
