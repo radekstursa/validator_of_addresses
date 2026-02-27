@@ -1,22 +1,19 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Union
+from typing import Optional
 from validator import AddressValidator
 
 app = FastAPI()
 validator = AddressValidator()
 
-class Address(BaseModel):
+class AddressRequest(BaseModel):
     city: str
-    psc: Union[str, int]
+    psc: str
     street: str
-    cp: Union[str, int]
+    cp: str
+    co: Optional[str] = None
 
 @app.post("/validate")
-def validate_address(addr: Address):
-    return validator.validate(
-        addr.city,
-        addr.psc,
-        addr.street,
-        addr.cp
+def validate_address(req: AddressRequest):
+    return validator.validate(req.city, req.psc, req.street, req.cp, req.co
     )
